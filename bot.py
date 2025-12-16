@@ -1,16 +1,18 @@
+import os
 import json
 import time
 import re
 import logging
+import asyncio
 from datetime import datetime
-from typing import Dict, List
-from aiogram import Bot, Dispatcher, types
+from typing import Dict
+from fastapi import FastAPI
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, StateFilter
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, PreCheckoutQuery
-from aiogram import F
+from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, PreCheckoutQuery
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -19,47 +21,29 @@ from selenium.webdriver.support import expected_conditions as EC
 from googleapiclient.discovery import build
 from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
-import os
 
-# Патч для WinError 121
-import aiohttp
-from aiogram.exceptions import TelegramNetworkError
-
-async def patched_resolve_host(self, host: str, port: int, family: int = 0):
-    try:
-        return await self._resolve_host(host, port, family=family)
-    except OSError as exc:
-        if exc.errno == 121:
-            raise TelegramNetworkError("Ignored WinError 121") from exc
-        raise
-
-aiohttp.resolver.AsyncResolver._resolve_host = patched_resolve_host
-
-# === ЗАГРУЗКА .env ===
+# === Настройки и логирование ===
 load_dotenv()
-
-# === НАСТРОЙКИ ===
 logging.basicConfig(level=logging.INFO)
-CACHE_FILE = "catalog.json"
-CACHE_DURATION = 3600
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-PROVIDER_TOKEN = "390540012:LIVE:81586"  # LIVE токен
+PROVIDER_TOKEN = "390540012:LIVE:81586"
 CURRENCY = os.getenv("CURRENCY", "RUB")
-SHEET_ID = os.getenv("SHEET_ID")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-PROXY = os.getenv("BOT_PROXY", None)
+SHEET_ID = os.getenv("SHEET_ID")
 
 if not BOT_TOKEN or not PROVIDER_TOKEN:
     raise ValueError("BOT_TOKEN или PROVIDER_TOKEN не найдены в .env!")
 
-from aiogram.client.session.aiohttp import AiohttpSession
-session = AiohttpSession(proxy=PROXY) if PROXY else AiohttpSession()
+# === FastAPI ===
+app = FastAPI()
 
-bot = Bot(token=BOT_TOKEN, session=session)
+# === Бот и Dispatcher ===
+bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
+# === FSM ===
 class OrderStates(StatesGroup):
     choosing_delivery = State()
     entering_phone = State()
@@ -68,7 +52,7 @@ class OrderStates(StatesGroup):
     confirming = State()
     entering_quantity = State()
 
-# === Доставка ===
+# === Настройки доставки ===
 DELIVERY_OPTIONS = {
     "inside_mkad": {"name": "Внутри МКАД", "price": 45000},
     "outside_mkad": {"name": "За МКАД (до 10 км)", "price": 75000},
@@ -86,6 +70,23 @@ def get_sheets_service():
     except Exception as e:
         logging.error(f"Google Sheets ошибка: {e}")
         return None
+
+# === Кэш и парсинг сайта ===
+CACHE_FILE = "catalog.json"
+CACHE_DURATION = 3600
+CATALOG = {}
+
+def load_catalog():
+    if os.path.exists(CACHE_FILE):
+        with open(CACHE_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            if time.time() - data.get("timestamp", 0) < CACHE_DURATION:
+                return data["catalog"]
+    return None
+
+def save_catalog(catalog):
+    with open(CACHE_FILE, 'w', encoding='utf-8') as f:
+        json.dump({"catalog": catalog, "timestamp": time.time()}, f, ensure_ascii=False, indent=2)
 
 def parse_catalog() -> Dict:
     chrome_options = Options()
@@ -123,8 +124,6 @@ def parse_catalog() -> Dict:
                             'СТАЖИРОВКА', 'КУРС', 'ТОРТ', 'ПОДАРОК', 'СЕРТИФИКАТ', 'НАБОР'
                         ]):
                             continue
-
-                        # ❌ полностью игнорируем ВСЕ оригинальные кексы сайта
                         if "кекс" in name.lower():
                             continue
 
@@ -136,7 +135,6 @@ def parse_catalog() -> Dict:
 
                         weights = []
                         prices = {}
-
                         try:
                             inputs = prod.find_elements(By.CSS_SELECTOR, "input[name='Вес']")
                             for inp in inputs:
@@ -177,11 +175,10 @@ def parse_catalog() -> Dict:
                             "composition": description or "Состав не указан",
                             "image_url": image_url
                         })
-
                     except:
                         continue
 
-                # ✅ ДОБАВЛЯЕМ КЕКС В КАЖДУЮ КАТЕГОРИЮ
+                # Добавляем рождественский кекс
                 product_id += 1
                 catalog[category].append({
                     "id": product_id,
@@ -192,16 +189,11 @@ def parse_catalog() -> Dict:
                         "Без орехов 🚫": 549000
                     },
                     "composition": (
-                        "Традиционный рождественский кекс, пропитанный ромом и коньяком.\n\n"
-                        "Вес ~800–850 г. Двух одинаковых не бывает.\n\n"
-                        "Состав: пшеничная мука, сливочное масло, сахар, яйца, ваниль, изюм, "
-                        "сушёная вишня, финики, инжир, курага, цитрусовые цукаты, специи.\n\n"
-                        "🔸 Вариант с орехами содержит фундук\n"
-                        "🔸 Без орехов — для чувствительных к аллергенам"
+                        "Традиционный рождественский кекс, пропитанный ромом и коньяком.\nВес ~800–850 г.\nСостав: пшеничная мука, сливочное масло, сахар, яйца, ваниль, изюм, "
+                        "сушёная вишня, финики, инжир, курага, цитрусовые цукаты, специи."
                     ),
                     "image_url": "https://optim.tildacdn.com/tild3464-3338-4236-a339-646462623538/-/format/webp/Keks_3D_.jpg.webp"
                 })
-
             except Exception as e:
                 logging.warning(f"Ошибка категории {category}: {e}")
 
@@ -212,22 +204,6 @@ def parse_catalog() -> Dict:
         return {}
     finally:
         driver.quit()
-
-# === Кэширование ===
-def load_catalog():
-    if os.path.exists(CACHE_FILE):
-        with open(CACHE_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            if time.time() - data.get("timestamp", 0) < CACHE_DURATION:
-                return data["catalog"]
-    return None
-
-def save_catalog(catalog):
-    with open(CACHE_FILE, 'w', encoding='utf-8') as f:
-        json.dump({"catalog": catalog, "timestamp": time.time()}, f, ensure_ascii=False, indent=2)
-
-# === Глобальный каталог ===
-CATALOG = {}
 
 async def start_parsing():
     global CATALOG
@@ -754,8 +730,13 @@ async def back_to_menu(callback: types.CallbackQuery):
     await callback.message.delete()
     await bot.send_message(callback.message.chat.id, "🍞 Выберите категорию:", reply_markup=get_main_menu())
 
+@app.on_event("startup")
 async def on_startup():
+    logging.info("Бот стартует через FastAPI + long-polling")
     await start_parsing()
+    asyncio.create_task(dp.start_polling(bot))
 
+@app.on_event("shutdown")
 async def on_shutdown():
     await bot.session.close()
+    logging.info("Бот остановлен")
