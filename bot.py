@@ -1,9 +1,7 @@
-import os
 import json
 import time
 import re
 import logging
-import asyncio
 from datetime import datetime
 from typing import Dict, List
 from aiogram import Bot, Dispatcher, types
@@ -22,34 +20,6 @@ from googleapiclient.discovery import build
 from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
 import os
-import asyncio
-from fastapi import FastAPI, Request
-from aiogram import types
-from bot import bot, dp, on_startup, on_shutdown
-
-WEBHOOK_PATH = "/webhook"
-WEBHOOK_URL = os.getenv("WEBHOOK_URL") + WEBHOOK_PATH
-
-app = FastAPI()
-
-
-@app.on_event("startup")
-async def startup():
-    await on_startup()
-    await bot.set_webhook(WEBHOOK_URL)
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    await bot.delete_webhook()
-    await on_shutdown()
-
-
-@app.post(WEBHOOK_PATH)
-async def telegram_webhook(request: Request):
-    update = types.Update(**await request.json())
-    await dp.feed_update(bot, update)
-    return {"ok": True}
 
 # Патч для WinError 121
 import aiohttp
