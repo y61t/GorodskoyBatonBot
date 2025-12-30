@@ -39,12 +39,15 @@ if not BOT_TOKEN or not PROVIDER_TOKEN:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # startup
-    print("STARTUP")
+    logging.info("Бот стартует через FastAPI + long-polling")
+    await start_parsing()
+    asyncio.create_task(dp.start_polling(bot))
 
     yield
 
     # shutdown
-    print("SHUTDOWN")
+    await bot.session.close()
+    logging.info("Бот остановлен")
 
 # === FastAPI ===
 app = FastAPI(lifespan=lifespan)
@@ -764,14 +767,3 @@ async def back_to_menu(callback: types.CallbackQuery):
     await bot.send_message(callback.message.chat.id, "🍞 Выберите категорию:", reply_markup=get_main_menu())
 
 
-@app.on_event("startup")
-async def on_startup():
-    logging.info("Бот стартует через FastAPI + long-polling")
-    await start_parsing()
-    asyncio.create_task(dp.start_polling(bot))
-
-
-@app.on_event("shutdown")
-async def on_shutdown():
-    await bot.session.close()
-    logging.info("Бот остановлен")
