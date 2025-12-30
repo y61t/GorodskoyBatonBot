@@ -43,6 +43,7 @@ bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
+
 # === FSM ===
 class OrderStates(StatesGroup):
     choosing_delivery = State()
@@ -51,6 +52,7 @@ class OrderStates(StatesGroup):
     entering_address = State()
     confirming = State()
     entering_quantity = State()
+
 
 # === Настройки доставки ===
 DELIVERY_OPTIONS = {
@@ -63,6 +65,7 @@ DELIVERY_OPTIONS = {
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 SERVICE_ACCOUNT_FILE = 'credentials.json'
 
+
 def get_sheets_service():
     try:
         creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
@@ -71,10 +74,12 @@ def get_sheets_service():
         logging.error(f"Google Sheets ошибка: {e}")
         return None
 
+
 # === Кэш и парсинг сайта ===
 CACHE_FILE = "catalog.json"
 CACHE_DURATION = 3600
 CATALOG = {}
+
 
 def load_catalog():
     if os.path.exists(CACHE_FILE):
@@ -84,9 +89,11 @@ def load_catalog():
                 return data["catalog"]
     return None
 
+
 def save_catalog(catalog):
     with open(CACHE_FILE, 'w', encoding='utf-8') as f:
         json.dump({"catalog": catalog, "timestamp": time.time()}, f, ensure_ascii=False, indent=2)
+
 
 def parse_catalog() -> Dict:
     chrome_options = Options()
@@ -205,6 +212,7 @@ def parse_catalog() -> Dict:
     finally:
         driver.quit()
 
+
 async def start_parsing():
     global CATALOG
     cached = load_catalog()
@@ -217,12 +225,14 @@ async def start_parsing():
         if CATALOG:
             save_catalog(CATALOG)
 
+
 def get_product_by_id(product_id: int):
     for cat in CATALOG.values():
         for item in cat:
             if item.get('id') == product_id:
                 return item
     return None
+
 
 # === Клавиатуры ===
 def get_main_menu():
@@ -232,6 +242,7 @@ def get_main_menu():
         [InlineKeyboardButton(text="🥖 Хлеб с добавками", callback_data="cat_Хлеб с добавками")],
         [InlineKeyboardButton(text="🛒 Корзина", callback_data="cart_view")]
     ])
+
 
 def get_delivery_keyboard():
     keyboard = []
@@ -256,9 +267,11 @@ async def handle_start(message: types.Message):
     )
     await message.answer(welcome, reply_markup=get_main_menu(), parse_mode="Markdown")
 
+
 @dp.message(F.chat.type == "private", Command("start"))
 async def cmd_start(message: types.Message):
     await handle_start(message)
+
 
 @dp.callback_query(F.message.chat.type == "private", F.data.startswith("cat_"))
 async def show_category(callback: types.CallbackQuery):
@@ -283,8 +296,10 @@ async def show_category(callback: types.CallbackQuery):
     keyboard.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")])
 
     await callback.message.delete()
-    await bot.send_message(callback.message.chat.id, f"📦 *{cat}*", reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+    await bot.send_message(callback.message.chat.id, f"📦 *{cat}*",
+                           reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
                            parse_mode="Markdown")
+
 
 @dp.callback_query(F.message.chat.type == "private", F.data.startswith("item_"))
 async def show_item(callback: types.CallbackQuery, state: FSMContext):
@@ -310,11 +325,13 @@ async def show_item(callback: types.CallbackQuery, state: FSMContext):
 
         await callback.message.delete()
         img_url = item['image_url']
-        if not (img_url.startswith("http") and any(img_url.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp", ".gif"])):
+        if not (img_url.startswith("http") and any(
+                img_url.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp", ".gif"])):
             img_url = "https://via.placeholder.com/300x300.png?text=Хлеб"
 
         try:
-            await bot.send_photo(callback.message.chat.id, img_url, caption=caption, reply_markup=keyboard, parse_mode="Markdown")
+            await bot.send_photo(callback.message.chat.id, img_url, caption=caption, reply_markup=keyboard,
+                                 parse_mode="Markdown")
         except:
             await bot.send_message(callback.message.chat.id, caption, reply_markup=keyboard, parse_mode="Markdown")
     else:
@@ -331,7 +348,8 @@ async def show_item(callback: types.CallbackQuery, state: FSMContext):
 
         await callback.message.delete()
         img_url = item['image_url']
-        if not (img_url.startswith("http") and any(img_url.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp", ".gif"])):
+        if not (img_url.startswith("http") and any(
+                img_url.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp", ".gif"])):
             img_url = "https://via.placeholder.com/300x300.png?text=Хлеб"
 
         try:
@@ -341,6 +359,7 @@ async def show_item(callback: types.CallbackQuery, state: FSMContext):
             await bot.send_message(callback.message.chat.id, caption,
                                    reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
                                    parse_mode="Markdown")
+
 
 @dp.callback_query(F.message.chat.type == "private", F.data.startswith("add_"))
 async def ask_quantity(callback: types.CallbackQuery, state: FSMContext):
@@ -366,6 +385,7 @@ async def ask_quantity(callback: types.CallbackQuery, state: FSMContext):
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
+
 
 @dp.message(F.chat.type == "private", StateFilter(OrderStates.entering_quantity))
 async def add_to_cart_with_quantity(message: types.Message, state: FSMContext):
@@ -407,6 +427,7 @@ async def add_to_cart_with_quantity(message: types.Message, state: FSMContext):
     )
 
     await bot.send_message(message.chat.id, "Выберите категорию:", reply_markup=get_main_menu())
+
 
 @dp.callback_query(F.message.chat.type == "private", F.data == "cart_view")
 async def view_cart(callback: types.CallbackQuery, state: FSMContext):
@@ -459,7 +480,8 @@ async def start_order(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(OrderStates.choosing_delivery)
 
     await callback.message.delete()
-    await bot.send_message(callback.message.chat.id, "🚚 *Выберите способ доставки:*", reply_markup=get_delivery_keyboard(),
+    await bot.send_message(callback.message.chat.id, "🚚 *Выберите способ доставки:*",
+                           reply_markup=get_delivery_keyboard(),
                            parse_mode="Markdown")
 
 
@@ -736,6 +758,7 @@ async def on_startup():
     logging.info("Бот стартует через FastAPI + long-polling")
     await start_parsing()
     asyncio.create_task(dp.start_polling(bot))
+
 
 @app.on_event("shutdown")
 async def on_shutdown():
