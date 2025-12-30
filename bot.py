@@ -730,6 +730,7 @@ async def back_to_menu(callback: types.CallbackQuery):
     await callback.message.delete()
     await bot.send_message(callback.message.chat.id, "🍞 Выберите категорию:", reply_markup=get_main_menu())
 
+
 @app.on_event("startup")
 async def on_startup():
     logging.info("Бот стартует через FastAPI + long-polling")
