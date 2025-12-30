@@ -4,6 +4,7 @@ import time
 import re
 import logging
 import asyncio
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Dict
 from fastapi import FastAPI
@@ -35,8 +36,18 @@ SHEET_ID = os.getenv("SHEET_ID")
 if not BOT_TOKEN or not PROVIDER_TOKEN:
     raise ValueError("BOT_TOKEN или PROVIDER_TOKEN не найдены в .env!")
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # startup
+    print("STARTUP")
+
+    yield
+
+    # shutdown
+    print("SHUTDOWN")
+
 # === FastAPI ===
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 
 # === Бот и Dispatcher ===
 bot = Bot(token=BOT_TOKEN)
