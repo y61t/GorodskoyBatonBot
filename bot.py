@@ -199,6 +199,22 @@ def parse_catalog() -> Dict:
                     except:
                         continue
 
+                # Добавляем рождественский кекс
+                product_id += 1
+                catalog[category].append({
+                    "id": product_id,
+                    "name": "Рождественский кекс",
+                    "weights": ["С орехами 🥜", "Без орехов 🚫"],
+                    "prices": {
+                        "С орехами 🥜": 549000,
+                        "Без орехов 🚫": 549000
+                    },
+                    "composition": (
+                        "Традиционный рождественский кекс, пропитанный ромом и коньяком.\nВес ~800–850 г.\nСостав: пшеничная мука, сливочное масло, сахар, яйца, ваниль, изюм, "
+                        "сушёная вишня, финики, инжир, курага, цитрусовые цукаты, специи."
+                    ),
+                    "image_url": "https://optim.tildacdn.com/tild3464-3338-4236-a339-646462623538/-/format/webp/Keks_3D_.jpg.webp"
+                })
             except Exception as e:
                 logging.warning(f"Ошибка категории {category}: {e}")
 
@@ -749,3 +765,5 @@ Email: {data.get('email')}
 async def back_to_menu(callback: types.CallbackQuery):
     await callback.message.delete()
     await bot.send_message(callback.message.chat.id, "🍞 Выберите категорию:", reply_markup=get_main_menu())
+
+
